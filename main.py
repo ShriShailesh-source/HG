@@ -70,7 +70,7 @@ def draw_hand(img, landmarks, width, height) -> None:
         cv2.circle(img, (x, y), 4, (255, 200, 0), -1)
 
     for start, end in HAND_CONNECTIONS:
-        cv2.line(img, points[start], points[end], (0, 255, 255), 2)
+        cv2.line(img, points[start], points[end], (0, 255, 255), 2) 
 
 
 def create_landmarker() -> vision.HandLandmarker:
@@ -96,6 +96,7 @@ def setup_volume_control():
 def main() -> None:
     landmarker = create_landmarker()
     volume = setup_volume_control()
+    print(f"System volume initialized. Current scalar: {volume.GetMasterVolumeLevelScalar():.2f}")
 
     cap = cv2.VideoCapture(0)
     p_time = 0.0
@@ -117,8 +118,10 @@ def main() -> None:
             open_palms_count = 0
 
             if results.hand_landmarks:
+                print(f"Hands detected: {len(results.hand_landmarks)}")
                 for i, hand_lms in enumerate(results.hand_landmarks):
                     label = results.handedness[i][0].category_name
+                    print(f"  Hand {i}: label={label}")
                     draw_hand(img, hand_lms, w, h)
 
                     landmarks = [[int(lm.x * w), int(lm.y * h)] for lm in hand_lms]
@@ -132,10 +135,12 @@ def main() -> None:
                     if label == "Right":
                         vol_scalar = float(np.interp(dist, [30, 180], [0, 1]))
                         vol_per = np.interp(dist, [30, 180], [0, 100])
+                        print(f"DEBUG Right hand: dist={dist:.1f}, vol_scalar={vol_scalar:.2f}, vol_per={vol_per:.1f}%")
                         try:
                             volume.SetMasterVolumeLevelScalar(vol_scalar, None)
-                        except Exception:
-                            pass
+                            print(f"  -> Volume set to {vol_per:.1f}%")
+                        except Exception as e:
+                            print(f"  -> ERROR setting volume: {e}")
                         cv2.putText(
                             img,
                             f"VOL: {int(vol_per)}%",
@@ -147,7 +152,12 @@ def main() -> None:
                         )
                     elif label == "Left":
                         bright_per = np.interp(dist, [30, 180], [0, 100])
-                        sbc.set_brightness(int(bright_per))
+                        print(f"DEBUG Left hand: dist={dist:.1f}, bright_per={bright_per:.1f}%")
+                        try:
+                            sbc.set_brightness(int(bright_per))
+                            print(f"  -> Brightness set to {bright_per:.1f}%")
+                        except Exception as e:
+                            print(f"  -> ERROR setting brightness: {e}")
                         cv2.putText(
                             img,
                             f"BRIGHT: {int(bright_per)}%",
