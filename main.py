@@ -100,6 +100,18 @@ def main() -> None:
 
     cap = cv2.VideoCapture(0)
     p_time = 0.0
+    
+    # Smoothing and accuracy improvements
+    smoothed_vol_scalar = 0.5
+    smoothed_brightness = 50
+    smooth_factor = 0.3  # Lower = more smoothing
+    last_vol_update_time = 0
+    last_bright_update_time = 0
+    min_update_interval = 0.05  # seconds (20 FPS max updates)
+    
+    # Distance calibration (adjust if needed based on testing)
+    dist_min = 20.0
+    dist_max = 200.0
 
     try:
         while True:
@@ -121,7 +133,8 @@ def main() -> None:
                 print(f"Hands detected: {len(results.hand_landmarks)}")
                 for i, hand_lms in enumerate(results.hand_landmarks):
                     label = results.handedness[i][0].category_name
-                    print(f"  Hand {i}: label={label}")
+                    confidence = results.handedness[i][0].score
+                    print(f"  Hand {i}: label='{label}', confidence={confidence:.2f}")
                     draw_hand(img, hand_lms, w, h)
 
                     landmarks = [[int(lm.x * w), int(lm.y * h)] for lm in hand_lms]
@@ -132,15 +145,23 @@ def main() -> None:
                     if is_palm_open(hand_lms):
                         open_palms_count += 1
 
-                    if label == "Right":
-                        vol_scalar = float(np.interp(dist, [30, 180], [0, 1]))
-                        vol_per = np.interp(dist, [30, 180], [0, 100])
-                        print(f"DEBUG Right hand: dist={dist:.1f}, vol_scalar={vol_scalar:.2f}, vol_per={vol_per:.1f}%")
-                        try:
-                            volume.SetMasterVolumeLevelScalar(vol_scalar, None)
-                            print(f"  -> Volume set to {vol_per:.1f}%")
-                        except Exception as e:
-                            print(f"  -> ERROR setting volume: {e}")
+                    # RIGHT HAND ONLY - VOLUME CONTROL
+                    if label.strip() == "Right":
+                        current_time = time.time()
+
+                        vol_scalar = float(np.interp(dist, [dist_min, dist_max], [0, 1]))
+                        smoothed_vol_scalar = smooth_factor * vol_scalar + (1 - smooth_factor) * smoothed_vol_scalar
+                        vol_per = smoothed_vol_scalar * 100
+
+                        if current_time - last_vol_update_time >= min_update_interval:
+                            print(f"  >> RIGHT HAND (VOLUME): dist={dist:.1f}, vol={vol_per:.1f}%")
+                            try:
+                                vol_clamped = max(0.0, min(1.0, smoothed_vol_scalar))
+                                volume.SetMasterVolumeLevelScalar(vol_clamped, None)
+                                last_vol_update_time = current_time
+                            except Exception:
+                                pass
+
                         cv2.putText(
                             img,
                             f"VOL: {int(vol_per)}%",
@@ -150,17 +171,24 @@ def main() -> None:
                             (255, 0, 0),
                             2,
                         )
-                    elif label == "Left":
-                        bright_per = np.interp(dist, [30, 180], [0, 100])
-                        print(f"DEBUG Left hand: dist={dist:.1f}, bright_per={bright_per:.1f}%")
-                        try:
-                            sbc.set_brightness(int(bright_per))
-                            print(f"  -> Brightness set to {bright_per:.1f}%")
-                        except Exception as e:
-                            print(f"  -> ERROR setting brightness: {e}")
+                    # LEFT HAND ONLY - BRIGHTNESS CONTROL
+                    elif label.strip() == "Left":
+                        current_time = time.time()
+
+                        bright_per = np.interp(dist, [dist_min, dist_max], [0, 100])
+                        smoothed_brightness = smooth_factor * bright_per + (1 - smooth_factor) * smoothed_brightness
+
+                        if current_time - last_bright_update_time >= min_update_interval:
+                            print(f"  >> LEFT HAND (BRIGHTNESS): dist={dist:.1f}, brightness={smoothed_brightness:.1f}%")
+                            try:
+                                sbc.set_brightness(int(smoothed_brightness))
+                                last_bright_update_time = current_time
+                            except Exception:
+                                pass
+
                         cv2.putText(
                             img,
-                            f"BRIGHT: {int(bright_per)}%",
+                            f"BRIGHT: {int(smoothed_brightness)}%",
                             (thumb_tip[0], thumb_tip[1] - 20),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.7,
@@ -171,9 +199,13 @@ def main() -> None:
                 if open_palms_count == 2:
                     try:
                         volume.SetMasterVolumeLevelScalar(0.5, None)
+                        smoothed_vol_scalar = 0.5
+                        print("RESET: Volume set to 50%")
                     except Exception:
                         pass
                     sbc.set_brightness(50)
+                    smoothed_brightness = 50
+                    print("RESET: Brightness set to 50%")
                     cv2.putText(
                         img,
                         "RESET TO 50%",
