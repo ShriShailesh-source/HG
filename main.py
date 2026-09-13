@@ -12,7 +12,6 @@ from pycaw.pycaw import AudioUtilities
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 MODEL_PATH = os.path.join(MODEL_DIR, "hand_landmarker.task")
 MODEL_URL = (
